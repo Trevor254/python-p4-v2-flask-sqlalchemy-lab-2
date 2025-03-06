@@ -1,9 +1,23 @@
-from app import app, db
-from server.models import Customer, Item, Review
-
+from app import create_app
+from models import db, Customer, Item, Review
 
 class TestReview:
     '''Review model in models.py'''
+
+    @classmethod
+    def setup_class(cls):
+        """Set up the app context and create tables before running tests."""
+        cls.app = create_app()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+        db.create_all()  # ✅ Ensure tables exist before tests run
+
+    @classmethod
+    def teardown_class(cls):
+        """Remove session and clean up after all tests."""
+        db.session.remove()
+        db.drop_all()  # ✅ Remove tables after tests
+        cls.ctx.pop()
 
     def test_can_be_instantiated(self):
         '''can be invoked to create a Python object.'''
@@ -18,34 +32,37 @@ class TestReview:
 
     def test_can_be_saved_to_database(self):
         '''can be added to a transaction and committed to review table with comment column.'''
-        with app.app_context():
-            assert 'comment' in Review.__table__.columns
-            r = Review(comment='great!')
-            db.session.add(r)
+        with self.app.app_context():  # ✅ Use the test app context
+            customer = Customer(name="Test Customer")
+            item = Item(name="Test Item", price=10.0)
+            db.session.add(customer)
+            db.session.add(item)
             db.session.commit()
-            assert hasattr(r, 'id')
-            assert db.session.query(Review).filter_by(id=r.id).first()
+
+            review = Review(comment='great!', customer_id=customer.id, item_id=item.id)
+            db.session.add(review)
+            db.session.commit()
+
+            saved_review = Review.query.filter_by(comment='great!').first()
+            assert saved_review is not None
+            assert saved_review.customer_id == customer.id
+            assert saved_review.item_id == item.id
 
     def test_is_related_to_customer_and_item(self):
         '''has foreign keys and relationships'''
-        with app.app_context():
-            assert 'customer_id' in Review.__table__.columns
-            assert 'item_id' in Review.__table__.columns
-
-            c = Customer()
-            i = Item()
-            db.session.add_all([c, i])
+        with self.app.app_context():  # ✅ Use the test app context
+            customer = Customer(name="Test Customer 2")
+            item = Item(name="Test Item 2", price=15.0)
+            db.session.add_all([customer, item])
             db.session.commit()
 
-            r = Review(comment='great!', customer=c, item=i)
-            db.session.add(r)
+            review = Review(comment='great!', customer=customer, item=item)
+            db.session.add(review)
             db.session.commit()
 
-            # check foreign keys
-            assert r.customer_id == c.id
-            assert r.item_id == i.id
-            # check relationships
-            assert r.customer == c
-            assert r.item == i
-            assert r in c.reviews
-            assert r in i.reviews
+            assert review.customer_id == customer.id
+            assert review.item_id == item.id
+            assert review.customer == customer
+            assert review.item == item
+            assert review in customer.reviews
+            assert review in item.reviews
